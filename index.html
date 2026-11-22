@@ -262,6 +262,12 @@
   .key.check:disabled { opacity: .45; pointer-events: none; }
   button:focus-visible { outline: 3px solid var(--var-key); outline-offset: 2px; }
 
+  .div-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px; font-size: 15px; font-weight: 600; }
+  .eqrow { direction: ltr; display: flex; align-items: center; justify-content: center; gap: 12px; margin: 10px 0; font-size: 24px; font-weight: 800; }
+  .eqrow .frac-view { font-size: 22px; }
+  .explain { margin: 6px 0 2px; font-size: 13px; line-height: 1.9; background: rgba(255,255,255,.6); border-radius: 10px; padding: 8px 10px; }
+  .ltr { direction: ltr; unicode-bidi: isolate; display: inline-block; }
+  .explain b { color: var(--var-key); }
   .mute-btn {
     border: none; background: rgba(255,255,255,.16); color: #fff;
     width: 34px; height: 34px; border-radius: 50%; font-size: 16px; cursor: pointer;
@@ -316,30 +322,24 @@
   <section class="step pending" id="step3-area">
     <div class="step-head">
       <div class="badge"><span>3</span></div>
-      <div class="step-label">حذف ضریب مجهول</div>
+      <div class="step-label">تقسیم دو طرف معادله</div>
     </div>
-    <div class="hint-text">راهنما: برای پیدا کردن x، طرف عددی را بر ضریب x تقسیم می‌کنیم. اول علامت، بعد صورت و مخرج را وارد کن.</div>
+    <div class="hint-text">راهنما: ضریب x را در معادلهٔ مرحلهٔ قبل پیدا کن. دو طرف را بر همان عدد تقسیم می‌کنیم تا x تنها بماند.</div>
     <div class="step-body">
-      <div class="fraction-wrapper">
-        <span class="xeq">x =</span>
-        <div class="sign-input" id="sign-display" onclick="setActive('sign')"></div>
-        <div class="frac-col">
-          <div class="frac-input" id="num-display" onclick="setActive('num')"></div>
-          <div class="horizontal-line"></div>
-          <div class="frac-input" id="den-display" onclick="setActive('den')"></div>
-        </div>
+      <div class="div-row">
+        <span>دو طرف را تقسیم بر چه عددی کنیم؟</span>
+        <div class="input-box" id="div-display" data-ph="؟" onclick="setActive('div')" style="width:96px;min-height:46px"></div>
       </div>
       <div id="alert3" class="alert"></div>
-      <button type="button" id="simplifyBtn" onclick="showSimplifyStep()">ساده کردن کسر</button>
     </div>
   </section>
 
   <section class="step pending" id="step4-area" style="display:none;">
     <div class="step-head">
       <div class="badge"><span>4</span></div>
-      <div class="step-label">ساده‌ترین صورت</div>
+      <div class="step-label">محاسبهٔ جواب</div>
     </div>
-    <div class="hint-text">راهنما: صورت و مخرج را بر بزرگ‌ترین عدد مشترک تقسیم کن تا کسر ساده شود.</div>
+    <div class="hint-text" id="hint4"></div>
     <div class="step-body">
       <div id="simplify-container"></div>
       <div id="alert4" class="alert"></div>
@@ -388,12 +388,13 @@
 const STAGE_IDS = {
   1: ['step1'],
   2: ['step2'],
-  3: ['sign', 'num', 'den'],
+  3: ['div'],
   4: ['simpSign', 'simpNum', 'simpDen', 'simpInt']
 };
 let stage = 1;
 let activeInput = 'step1';
 let solution = {};
+let S2 = null, fin = null;
 let isFinished = false;
 let corrects = 0;
 let wrongs = 0;
@@ -448,6 +449,7 @@ function isEquivalent(L, R) {
 
 /* ===================== کمک‌ها برای نمایش ===================== */
 const fixMinus = s => s.replace(/-/g, '−');
+const L = s => `<span class="ltr">${fixMinus(String(s))}</span>`;   // عدد/عبارت را از جهت راست‌به‌چپ جدا می‌کند تا علامت منفی سمت چپ بماند
 function fracHTML(n, d) {
   return `<span class="frac-view"><span>${n}</span><span class="bar"></span><span>${d}</span></span>`;
 }
@@ -470,7 +472,7 @@ function refreshCards() {
 function setStage(n, scroll = true) {
   stage = n;
   refreshCards();
-  const first = { 1: 'step1', 2: 'step2', 3: 'sign', 4: $('simpSign-display') ? 'simpSign' : 'step1' }[n];
+  const first = { 1: 'step1', 2: 'step2', 3: 'div', 4: $('simpSign-display') ? 'simpSign' : 'step1' }[n];
   setActive(first, scroll);
 }
 
@@ -499,7 +501,8 @@ function press(val) {
   if (!target || target.classList.contains('locked')) return;
 
   const kind = ['step1', 'step2'].includes(activeInput) ? 'expr'
-             : ['sign', 'simpSign'].includes(activeInput) ? 'sign' : 'num';
+             : activeInput === 'div' ? 'int'
+             : activeInput === 'simpSign' ? 'sign' : 'num';
   const cur = target.textContent;
 
   if (val === 'C') { target.textContent = ''; return; }
@@ -511,10 +514,12 @@ function press(val) {
     if (val === '+' || val === '-') {
       target.textContent = val === '-' ? '−' : '+';
       // رفتن خودکار به خانهٔ بعدی
-      if (activeInput === 'sign') setActive('num');
-      else if ($('simpNum-display')) setActive('simpNum');
+      if ($('simpNum-display')) setActive('simpNum');
       else if ($('simpInt-display')) setActive('simpInt');
     }
+  } else if (kind === 'int') {
+    if (val === '-' && cur === '') target.textContent = '−';
+    else if (/^\d$/.test(val) && cur.replace('−', '').length < 3) target.textContent = cur + val;
   } else {
     if (/^\d$/.test(val) && cur.length < 3) target.textContent = cur + val;
   }
@@ -552,19 +557,13 @@ function generate() {
   let s = null;
   while (!s) s = makeEquation();
 
-  s.n = Math.abs(s.B0);
-  s.d = Math.abs(s.A0);
-  s.sign = ((s.B0 > 0) === (s.A0 > 0)) ? '-' : '+';   // x = -B0/A0
-  const g = gcd(s.n, s.d);
-  s.sn = s.n / g;
-  s.sd = s.d / g;
-  s.canSimplify = g > 1;
   solution = s;
+  S2 = null; fin = null;
 
   // پاک‌سازی صفحه
   $('step4-area').style.display = 'none';
   $('simplify-container').innerHTML = '';
-  $('simplifyBtn').style.display = 'none';
+  $('step3-area').style.display = '';
   $('nextBtn').style.display = 'none';
   $('resultCard').style.display = 'none';
   $('mainCheckBtn').disabled = false;
@@ -749,56 +748,68 @@ function checkStep2() {
       'جمع یا تفریق عددها را دوباره حساب کن.', sample);
   }
   reward();
-  showMsg(2, 'ok', 'عالیه!', 'معادله ساده شد.');
   lockStep(['step2']);
+  const xSide = L.nx === 1 ? L : R, nSide = L.nx === 1 ? R : L;
+  S2 = { k: xSide.x, m: nSide.c, xLeft: L.nx === 1 };
+  const n = Math.abs(S2.m), d = Math.abs(S2.k), g = gcd(n, d);
+  fin = { sign: ((S2.m > 0) === (S2.k > 0)) ? '+' : '-', sn: n / g, sd: d / g };
+  if (S2.k === 1) {
+    // ضریب x برابر 1 است: نیازی به تقسیم نیست
+    showMsg(2, 'ok', 'عالیه! ضریب x برابر 1 است', 'پس x همین‌جا مشخص شد و نیازی به تقسیم نیست.');
+    $('step3-area').style.display = 'none';
+    $('step4-area').style.display = 'none';
+    finish();
+    return;
+  }
+  showMsg(2, 'ok', 'عالیه!', 'معادله ساده شد.');
   setStage(3);
 }
 
+function divDemoHTML() {
+  const { k, m, xLeft } = S2;
+  const xs = (k === -1 ? '-' : '') + 'x';
+  const xTerm = Math.abs(k) === 1 ? xs : `${k}x`;
+  const L1 = xLeft ? fracHTML(fixMinus(xTerm), fixMinus(String(k))) : fracHTML(fixMinus(String(m)), fixMinus(String(k)));
+  const R1 = xLeft ? fracHTML(fixMinus(String(m)), fixMinus(String(k))) : fracHTML(fixMinus(xTerm), fixMinus(String(k)));
+  const mk = fracHTML(fixMinus(String(m)), fixMinus(String(k)));
+  const row2 = xLeft ? `<span>x</span><span>=</span>${mk}` : `${mk}<span>=</span><span>x</span>`;
+  return `<div class="eqrow">${L1}<span>=</span>${R1}</div>
+    <div class="explain">عدد <b class="ltr">${fixMinus(String(k))}</b> در <b class="ltr">${fixMinus(xTerm)}</b> با عدد <b class="ltr">${fixMinus(String(k))}</b> در مخرج ساده می‌شود و <b class="ltr">x</b> تنها می‌ماند:</div>
+    <div class="eqrow">${row2}</div>`;
+}
+
 function checkStep3() {
-  const s = readSign('sign');
-  const n = parseInt(txt('num'), 10);
-  const d = parseInt(txt('den'), 10);
-  if (!s) return showMsg(3, 'info', 'علامت را انتخاب کن', 'اول + یا − را بزن.');
-  if (isNaN(n) || isNaN(d)) return showMsg(3, 'info', 'کسر کامل نیست', 'صورت و مخرج را وارد کن.');
-
-  const sample = answerHTML(solution.sign, solution.n, solution.d);
-  const exact = s === solution.sign && n === solution.n && d === solution.d;
-  // دانش‌آموزی که همان‌جا کسر را ساده نوشته هم جواب درست داده است
-  const alreadySimple = solution.canSimplify && s === solution.sign && n === solution.sn && d === solution.sd;
-
-  if (exact) {
+  const raw = txt('div').replace('−', '-');
+  const v = parseInt(raw, 10);
+  if (isNaN(v)) return showMsg(3, 'info', 'عدد را وارد کن', 'عددی که دو طرف بر آن تقسیم می‌شود را بنویس.');
+  const k = S2.k;
+  if (v === k) {
     reward();
-    showMsg(3, 'ok', 'کسر ثبت شد.', '');
-    lockStep(['sign', 'num', 'den']);
-    if (solution.canSimplify) {
-      $('simplifyBtn').style.display = 'block';
-      $('simplifyBtn').scrollIntoView({ behavior: 'smooth', block: 'center' });
-    } else finish();
-  } else if (alreadySimple) {
-    reward();
-    showMsg(3, 'ok', 'آفرین! کسر را همان‌جا ساده کردی.', '');
-    lockStep(['sign', 'num', 'den']);
-    finish();
+    showMsg(3, 'ok', `درسته! دو طرف را بر ${L(k)} تقسیم می‌کنیم.`, divDemoHTML());
+    lockStep(['div']);
+    startStep4();
   } else {
     penalize();
+    const slip = Math.abs(v) === Math.abs(k);
     showMsg(3, 'err', 'هنوز درست نیست',
-      s !== solution.sign
-        ? 'علامت جواب را دوباره بررسی کن. (علامت صورت و مخرج را با هم در نظر بگیر.)'
-        : 'صورت یا مخرج را دوباره بررسی کن. صورت = عدد طرف معلوم، مخرج = ضریب x.',
-      sample);
+      slip ? 'عدد درست است ولی علامتش را بررسی کن. ضریب x منفی است.'
+           : 'ضریب x را در معادلهٔ مرحلهٔ قبل پیدا کن؛ همان عددی که کنار x نوشته شده است.',
+      `<span class="math">${fixMinus(String(k))}</span>`);
   }
 }
 
-function showSimplifyStep() {
-  $('simplifyBtn').style.display = 'none';
+function startStep4() {
   const area = $('step4-area');
   area.style.display = 'block';
   const c = $('simplify-container');
-  if (solution.sd === 1) {
+  const mk = L(S2.m), kk = L(S2.k);
+  if (fin.sd === 1) {
+    $('hint4').innerHTML = `راهنما: ${mk} تقسیم بر ${kk} چند می‌شود؟ علامت جواب را هم مشخص کن.`;
     c.innerHTML = `<div class="fraction-wrapper"><span class="xeq">x =</span>
       <div class="sign-input" id="simpSign-display" onclick="setActive('simpSign')"></div>
       <div class="input-box" style="width:80px;min-height:44px" id="simpInt-display" onclick="setActive('simpInt')"></div></div>`;
   } else {
+    $('hint4').innerHTML = `راهنما: ${mk} تقسیم بر ${kk} عدد صحیح نمی‌شود، پس جواب کسر است. اگر کسر قابل ساده شدن است آن را ساده کن، بعد علامت، صورت و مخرج را بنویس.`;
     c.innerHTML = `<div class="fraction-wrapper"><span class="xeq">x =</span>
       <div class="sign-input" id="simpSign-display" onclick="setActive('simpSign')"></div>
       <div class="frac-col">
@@ -813,30 +824,31 @@ function showSimplifyStep() {
 function checkStep4() {
   const s = readSign('simpSign');
   if (!s) return showMsg(4, 'info', 'علامت را انتخاب کن', 'اول + یا − را بزن.');
-  const sample = answerHTML(solution.sign, solution.sn, solution.sd);
+  const sample = answerHTML(fin.sign, fin.sn, fin.sd);
   let ok = false;
 
-  if (solution.sd === 1) {
+  if (fin.sd === 1) {
     const v = parseInt(txt('simpInt'), 10);
-    if (isNaN(v)) return showMsg(4, 'info', 'عدد را وارد کن', '');
-    ok = (s === solution.sign && v === solution.sn);
+    if (isNaN(v)) return showMsg(4, 'info', 'عدد را وارد کن', 'حاصل تقسیم را بنویس.');
+    ok = (s === fin.sign && v === fin.sn);
     if (ok) lockStep(['simpSign', 'simpInt']);
   } else {
     const n = parseInt(txt('simpNum'), 10);
     const d = parseInt(txt('simpDen'), 10);
     if (isNaN(n) || isNaN(d)) return showMsg(4, 'info', 'کسر کامل نیست', 'صورت و مخرج را وارد کن.');
-    ok = (s === solution.sign && n === solution.sn && d === solution.sd);
+    ok = (s === fin.sign && n === fin.sn && d === fin.sd);
     if (ok) lockStep(['simpSign', 'simpNum', 'simpDen']);
   }
 
   if (ok) {
     reward();
-    showMsg(4, 'ok', 'احسنت! کسر ساده شد.', '');
+    showMsg(4, 'ok', 'احسنت! جواب درست است.', '');
     finish();
   } else {
     penalize();
     showMsg(4, 'err', 'هنوز درست نیست',
-      'صورت و مخرج را بر بزرگ‌ترین عدد مشترک تقسیم کن و علامت را هم بررسی کن.', sample);
+      fin.sd === 1 ? 'تقسیم را دوباره حساب کن و علامت را هم بررسی کن.'
+                   : 'کسر را تا حد امکان ساده کن و علامت را هم بررسی کن.', sample);
   }
 }
 
@@ -845,7 +857,7 @@ function finish() {
   refreshCards();
   document.querySelectorAll('.input-box, .frac-input, .sign-input').forEach(el => el.classList.remove('active'));
   $('mainCheckBtn').disabled = true;
-  $('resultMath').innerHTML = answerHTML(solution.sign, solution.sn, solution.sd);
+  $('resultMath').innerHTML = answerHTML(fin.sign, fin.sn, fin.sd);
   $('resultCard').querySelector('.title').textContent = PRAISES[Math.floor(Math.random() * PRAISES.length)];
   $('resultCard').style.display = 'block';
   setTimeout(sfxCheer, 250);
